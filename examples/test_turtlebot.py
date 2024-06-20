@@ -81,6 +81,7 @@ def main(floor_width=2.0):
 
         robot_aabb = get_subtree_aabb(robot, base_link) # Computes the robot's axis-aligned bounding box (AABB)
         lower, upper = robot_aabb # Decomposing the AABB into the lower and upper extrema
+        lower, upper = np.array(lower), np.array(upper)
         center = (lower + upper)/2. # Computing the center of the AABB
         extent = upper - lower # Computing the dimensions of the AABB
         handles.extend(draw_point(center))

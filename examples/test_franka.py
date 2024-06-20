@@ -3,15 +3,16 @@
 from __future__ import print_function
 
 import pybullet as p
+import numpy as np
 
 from pybullet_tools.utils import add_data_path, connect, dump_body, disconnect, wait_for_user, \
     get_movable_joints, get_sample_fn, set_joint_positions, get_joint_name, LockRenderer, link_from_name, get_link_pose, \
     multiply, Pose, Point, interpolate_poses, HideOutput, draw_pose, set_camera_pose, load_pybullet, \
-    assign_link_colors, add_line, point_from_pose, remove_handles, BLUE, INF
+    assign_link_colors, add_line, point_from_pose, remove_handles, BLUE, INF, BLOCK_URDF, load_model, \
+        set_pose, stable_z, RGBA, create_box, get_point, set_point, set_euler, get_euler
 
 from pybullet_tools.ikfast.franka_panda.ik import PANDA_INFO, FRANKA_URDF
 from pybullet_tools.ikfast.ikfast import get_ik_joints, either_inverse_kinematics, check_ik_solver
-
 
 def test_retraction(robot, info, tool_link, distance=0.1, **kwargs):
     ik_joints = get_ik_joints(robot, info, tool_link)
@@ -45,7 +46,7 @@ def test_ik(robot, info, tool_link, tool_pose):
     # TODO: sort by one joint angle
     # TODO: prune based on proximity
     ik_joints = get_ik_joints(robot, info, tool_link)
-    for conf in either_inverse_kinematics(robot, info, tool_link, tool_pose, use_pybullet=False,
+    for conf in either_inverse_kinematics(robot, info, tool_link, tool_pose, use_pybullet=True,
                                           max_distance=INF, max_time=10, max_candidates=INF):
         # TODO: profile
         set_joint_positions(robot, ik_joints, conf)
@@ -65,7 +66,13 @@ def main():
             robot = load_pybullet(FRANKA_URDF, fixed_base=True)
             assign_link_colors(robot, max_colors=3, s=0.5, v=1.)
             #set_all_color(robot, GREEN)
-    obstacles = [plane] # TODO: collisions with the ground
+    obstacle = create_box(w=0.5, l=0.5, h=0.5, color=RGBA(0, 1, 0, 1)) # Creates a red box obstacle
+    set_point(obstacle, [0.5, 0.5, 0.5 / 2.]) # Sets the [x,y,z] position of the obstacle
+    print('Position:', get_point(obstacle))
+    set_euler(obstacle, [0, 0, np.pi / 4]) #  Sets the [roll,pitch,yaw] orientation of the obstacle
+    print('Orientation:', get_euler(obstacle))
+
+    obstacles = [plane, obstacle] # TODO: collisions with the ground
 
     dump_body(robot)
     print('Start?')

@@ -17,7 +17,8 @@ from .utils import multiply, get_link_pose, set_joint_position, set_joint_positi
     movable_from_joints, quat_from_axis_angle, LockRenderer, Euler, get_links, get_link_name, \
     get_extend_fn, get_moving_links, link_pairs_collision, get_link_subtree, \
     clone_body, get_all_links, pairwise_collision, tform_point, get_camera_matrix, ray_from_pixel, pixel_from_ray, dimensions_from_camera_matrix, \
-    wrap_angle, TRANSPARENT, PI, OOBB, pixel_from_point, set_all_color, wait_if_gui
+    wrap_angle, TRANSPARENT, PI, OOBB, pixel_from_point, set_all_color, wait_if_gui, get_point, get_quat
+from scipy.spatial.transform import Rotation as R
 
 # TODO: restrict number of pr2 rotations to prevent from wrapping too many times
 
@@ -56,7 +57,7 @@ PR2_GROUPS = {
     'head': ['head_pan_joint', 'head_tilt_joint'],
     arm_from_arm(LEFT_ARM): ['l_shoulder_pan_joint', 'l_shoulder_lift_joint', 'l_upper_arm_roll_joint',
                              'l_elbow_flex_joint', 'l_forearm_roll_joint', 'l_wrist_flex_joint', 'l_wrist_roll_joint'],
-    arm_from_arm(RIGHT_ARM): ['r_shoulder_pan_joint', 'r_shoulder_lift_joint', 'r_upper_arm_roll_joint', 
+    arm_from_arm(RIGHT_ARM): ['r_shoulder_pan_joint', 'r_shoulder_lift_joint', 'r_upper_arm_roll_joint',
                               'r_elbow_flex_joint', 'r_forearm_roll_joint', 'r_wrist_flex_joint', 'r_wrist_roll_joint'],
     gripper_from_arm(LEFT_ARM): ['l_gripper_l_finger_joint', 'l_gripper_r_finger_joint',
                                  'l_gripper_l_finger_tip_joint', 'l_gripper_r_finger_tip_joint'],
@@ -300,12 +301,13 @@ def get_top_grasps(body, under=False, tool_pose=TOOL_POSE, body_pose=unit_pose()
     grasps = []
     if w <= max_width:
         for i in range(1 + under):
-            rotate_z = Pose(euler=[0, 0, math.pi / 2 + i * math.pi])
+            # rotate_z = Pose(euler=[0, 0, math.pi / 2 + i * math.pi])
+            rotate_z = Pose(euler=[0, 0, i * math.pi * 2 * 0.1])
             grasps += [multiply(tool_pose, translate_z, rotate_z,
                                 reflect_z, translate_center, body_pose)]
     if l <= max_width:
         for i in range(1 + under):
-            rotate_z = Pose(euler=[0, 0, i * math.pi])
+            rotate_z = Pose(euler=[0, 0, i * math.pi * 2 * 0.1])
             grasps += [multiply(tool_pose, translate_z, rotate_z,
                                 reflect_z, translate_center, body_pose)]
     return grasps
@@ -352,6 +354,38 @@ def get_top_cylinder_grasps(body, tool_pose=TOOL_POSE, body_pose=unit_pose(),
         rotate_z = Pose(euler=[0, 0, theta])
         yield multiply(tool_pose, translate_z, rotate_z,
                        reflect_z, translate_center, body_pose)
+
+def get_perpendicular_grasps(body, grasp_length=GRASP_LENGTH):
+    # Apply transformations right to left on object pose
+    # body_pose = unit_pose()
+    from pybullet_tools.franka_primitives import BodyPose
+    from pybullet_tools.utils import get_euler
+    body_pose = Pose(euler=get_euler(body))
+
+    center, (diameter, height) = approximate_as_cylinder(body, body_pose=unit_pose())
+
+    reflect_z = Pose(euler=[0, math.pi, 0])
+    rot_z = Pose(euler=[0, 0, math.pi / 2])
+    translate_z = Pose(point=[0, 0, height / 2 - grasp_length + 0.08])
+    translate_center = Pose(point=point_from_pose(body_pose)-center)
+    # i = 0
+    # while True:
+    #     # i += 1
+    #     # x_perturb = min(0.03, i * 0.001)
+    #     theta = random.uniform(0, 2*np.pi)
+    #     rotate_z = Pose(euler=[0, theta, 0])
+    #     x_noise = random.uniform(-0.02, 0.02)
+    #     translate_x = Pose(point=[x_noise, 0, 0])
+    #     yield multiply(translate_z, rotate_z,
+    #                    reflect_z, rot_z, translate_center, translate_x, body_pose)
+
+    for theta in [t * np.pi * 2 for t in np.linspace(0, 1, 9)[:-1]]:
+        rotate_z = Pose(euler=[0, theta, 0])
+        for perturb in np.linspace(-0.02, 0.02, 5):
+            translate_x = Pose(point=[0, perturb, 0])
+            yield multiply(translate_z, translate_x, rotate_z, body_pose,
+                        # reflect_z, rot_z, translate_center, translate_x, body_pose)
+                        reflect_z, rot_z, translate_center)
 
 def get_side_cylinder_grasps(body, under=False, tool_pose=TOOL_POSE, body_pose=unit_pose(),
                              max_width=MAX_GRASP_WIDTH, grasp_length=GRASP_LENGTH,

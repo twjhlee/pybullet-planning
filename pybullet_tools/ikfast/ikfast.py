@@ -16,7 +16,8 @@ from ..utils import get_link_pose, link_from_name, multiply, invert, parent_join
     prune_fixed_joints, joints_from_names, INF, get_difference_fn, \
     get_joint_positions, get_min_limits, get_max_limits, interval_generator, elapsed_time, randomize, violates_limits, \
     get_length, get_relative_pose, set_joint_positions, get_pose_distance, ConfSaver, \
-    sub_inverse_kinematics, set_configuration, wait_for_user, multiple_sub_inverse_kinematics, get_ordered_ancestors
+    sub_inverse_kinematics, set_configuration, wait_for_user, multiple_sub_inverse_kinematics, get_ordered_ancestors, \
+        pairwise_collisions
 
 SETUP_FILENAME = 'setup.py'
 
@@ -134,7 +135,7 @@ def ikfast_forward_kinematics(robot, ikfast_info, tool_link, conf=None, use_ikfa
 
 def ikfast_inverse_kinematics(robot, ikfast_info, tool_link, world_from_target,
                               fixed_joints=[], max_attempts=INF, max_time=INF,
-                              norm=INF, max_distance=INF, **kwargs):
+                              norm=INF, max_distance=INF, obstacles=[], **kwargs):
     assert (max_attempts < INF) or (max_time < INF)
     if max_distance is None:
         max_distance = INF
@@ -163,6 +164,8 @@ def ikfast_inverse_kinematics(robot, ikfast_info, tool_link, world_from_target,
         for conf in randomize(compute_inverse_kinematics(ikfast.get_ik, base_from_ee, free_positions)):
             #solution(robot, ik_joints, conf, tool_link, world_from_target)
             difference = difference_fn(current_conf, conf)
+            if obstacles and pairwise_collisions(robot, obstacles):
+                continue
             if not violates_limits(robot, ik_joints, conf) and (get_length(difference, norm=norm) <= max_distance):
                 #set_joint_positions(robot, ik_joints, conf)
                 yield conf

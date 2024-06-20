@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import collections
 import colorsys
 import inspect
 import json
@@ -18,11 +19,7 @@ import shutil
 import cProfile
 import pstats
 
-from collections import defaultdict, deque, namedtuple, OrderedDict
-try:
-    from collections import MutableSet
-except ImportError:
-    from collections.abc import MutableSet
+from collections import defaultdict, deque, namedtuple
 from itertools import product, combinations, count, cycle, islice
 from multiprocessing import TimeoutError
 from contextlib import contextmanager
@@ -348,7 +345,7 @@ def named_tuple(name, fields, defaults=None):
         NT.__new__.__defaults__ = defaults
     return NT
 
-class OrderedSet(OrderedDict, MutableSet):
+class OrderedSet(collections.OrderedDict, collections.MutableSet):
     # TODO: https://stackoverflow.com/questions/1653970/does-python-have-an-ordered-set
     def __init__(self, seq=()): # known special case of set.__init__
         #super(OrderedSet, self).__init__()
@@ -3479,7 +3476,7 @@ def approximate_as_cylinder(body, **kwargs):
 
 # Collision
 
-MAX_DISTANCE = 0. # 0. | 1e-3
+MAX_DISTANCE = 1e-3 # 0. | 1e-3
 
 CollisionPair = namedtuple('Collision', ['body', 'links'])
 
@@ -3994,7 +3991,7 @@ def check_initial_end(start_conf, end_conf, collision_fn, verbose=True):
 def plan_joint_motion(body, joints, end_conf, obstacles=[], attachments=[],
                       self_collisions=True, disabled_collisions=set(),
                       weights=None, resolutions=None, max_distance=MAX_DISTANCE,
-                      use_aabb=False, cache=True, custom_limits={}, algorithm=None, **kwargs):
+                      use_aabb=False, cache=True, custom_limits={}, algorithm=None, smoothing=False, **kwargs):
 
     assert len(joints) == len(end_conf)
     if (weights is None) and (resolutions is not None):
@@ -4010,9 +4007,14 @@ def plan_joint_motion(body, joints, end_conf, obstacles=[], attachments=[],
     if not check_initial_end(start_conf, end_conf, collision_fn):
         return None
 
+    print(algorithm)
+
     if algorithm is None:
         from motion_planners.rrt_connect import birrt
-        return birrt(start_conf, end_conf, distance_fn, sample_fn, extend_fn, collision_fn, **kwargs)
+        from motion_planners.smoothing import smooth_path
+        path = birrt(start_conf, end_conf, distance_fn, sample_fn, extend_fn, collision_fn, **kwargs)
+        return smooth_path(path, extend_fn, collision_fn) if smoothing else path
+
     return solve(start_conf, end_conf, distance_fn, sample_fn, extend_fn, collision_fn,
                  algorithm=algorithm, weights=weights, **kwargs)
     #return plan_lazy_prm(start_conf, end_conf, sample_fn, extend_fn, collision_fn)
