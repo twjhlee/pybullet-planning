@@ -17,6 +17,7 @@ import pybullet as p
 import numpy as np
 import argparse
 from glob import glob
+import pickle
 
 from scipy.spatial.transform import Rotation as R
 
@@ -143,24 +144,31 @@ def vector_to_euler(direction):
 
     return np.array([yaw, pitch, roll]).tolist()
 
+
+def generate_grasp_targets(line):
+    pass
+
 def main(args, display='execute'): # control | execute | step
 
     connect(use_gui=True)
     disable_real_time()
     draw_global_system()
+    # Read the lines pickle file.
+    with open(os.path.join(args.path, '../Interact/lines.pickle'), 'rb') as f:
+        lines = pickle.load(f)
     with HideOutput():
         # robot = load_model(FRANKA_URDF) # KUKA_IIWA_URDF | DRAKE_IIWA_URDF
         # robot = load_pybullet(FRANKA_URDF, fixed_base=True)
-        robot = load_pybullet(FRANKA_URDF.replace('panda_arm_hand', 'panda_arm_hand_cam'), fixed_base=True)
+        robot = load_pybullet(FRANKA_URDF.replace('panda_arm_hand', 'panda_arm_hand_cam_closed'), fixed_base=True)
         # maybe change this?
         floor = load_model('models/short_floor.urdf')
-        # read all urdfs
+        # read all urdfs of bbjects
         all_urdfs = sorted(glob(os.path.join(args.path, "mesh*.urdf")))
         scene_mesh = []
         for urdf_path in all_urdfs:
             mesh = p.loadURDF(urdf_path)
             scene_mesh.append(mesh)
-
+    # Set the floor position
     set_pose(floor, Pose(Point(x=1.2, z=0.025)))
 
     joints = get_movable_joints(robot)
@@ -170,7 +178,15 @@ def main(args, display='execute'): # control | execute | step
 
     saved_world = WorldSaver()
     conf = (0, -np.pi / 4.0, 0, -3.0 * np.pi / 4.0, 0, np.pi / 2, np.pi / 4, 0.04, 0.04)
+    # move robot to start position
     set_joint_positions(robot, joints, conf)
+
+    # generate grasp targets
+    grasp_targets = generate_grasp_targets(lines)
+
+    # We should do the planning here
+    while True:
+        update_state()
 
     print('Quit?')
     wait_if_gui()
