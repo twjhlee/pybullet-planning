@@ -119,7 +119,7 @@ def main():
 
     dump_body(robot)
     print('Start?')
-    wait_for_user()
+    # wait_for_user()
 
     info = PANDA_INFO
     tool_link = link_from_name(robot, 'panda_hand')
@@ -133,7 +133,7 @@ def main():
         print('Iteration:', i)
         conf = sample_fn()
         set_joint_positions(robot, joints, conf)
-        wait_for_user()
+        # wait_for_user()
         #test_ik(robot, info, tool_link, get_link_pose(robot, tool_link))
         # test_retraction(robot, info, tool_link, use_pybullet=False,
         #                 max_distance=0.1, max_time=0.05, max_candidates=100)

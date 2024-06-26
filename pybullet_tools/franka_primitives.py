@@ -208,7 +208,8 @@ class Command(object):
 #######################################################
 
 def get_tool_link(robot):
-    return link_from_name(robot, 'panda_hand')
+    # return link_from_name(robot, 'panda_hand')
+    return link_from_name(robot, 'tool_link')
 
 
 def get_grasp_gen(robot, grasp_name='top'):

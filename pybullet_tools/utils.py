@@ -3992,7 +3992,6 @@ def plan_joint_motion(body, joints, end_conf, obstacles=[], attachments=[],
                       self_collisions=True, disabled_collisions=set(),
                       weights=None, resolutions=None, max_distance=MAX_DISTANCE,
                       use_aabb=False, cache=True, custom_limits={}, algorithm=None, smoothing=False, **kwargs):
-
     assert len(joints) == len(end_conf)
     if (weights is None) and (resolutions is not None):
         weights = np.reciprocal(resolutions)

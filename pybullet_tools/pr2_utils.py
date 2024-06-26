@@ -351,6 +351,7 @@ def get_top_cylinder_grasps(body, tool_pose=TOOL_POSE, body_pose=unit_pose(),
         return
     while True:
         theta = random.uniform(0, 2*np.pi)
+        theta = 0
         rotate_z = Pose(euler=[0, 0, theta])
         yield multiply(tool_pose, translate_z, rotate_z,
                        reflect_z, translate_center, body_pose)
