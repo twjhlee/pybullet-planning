@@ -54,33 +54,30 @@ def plan(robot, block, fixed, teleport):
                           path3.body_paths)
     return None
 
-def plan_nft(robot, target_points, target_mesh, scene_mesh, floor, teleport, smoothing=False, algorithm=None):
+def plan_nft(robot, target_point, target_mesh, scene_mesh, floor, teleport, smoothing=False, algorithm=None):
     grasp_gen = get_grasp_gen(robot, 'top')
     grasping_fn = get_grasping_fn(robot, fixed=scene_mesh + [floor], teleport=teleport, num_attempts=10)
     free_motion_fn = get_free_motion_gen(robot, fixed=scene_mesh + [floor], teleport=teleport, smoothing=smoothing, algorithm=algorithm)
     holding_motion_fn = get_holding_motion_gen(robot, fixed=scene_mesh + [floor], teleport=teleport, algorithm=algorithm)
 
-    target_poses = []
-    for target in target_points:
-        target_poses.append(BodyPose(target))
+    target_pose = BodyPose(target_point)
 
     init_pos = BodyConf(robot)
     saved_world = WorldSaver()
 
-    for target_pose, target_point in zip(target_poses, target_points):
-        for grasp, in grasp_gen(target_point):
-            saved_world.restore()
-            q_grasp = inverse_kinematics(robot, grasp.link,
-                end_effector_from_body(target_pose.pose, grasp.grasp_pose))
-            conf = BodyConf(robot, q_grasp)
-            link_pose = get_link_pose(robot, link_from_name(robot, 'panda_hand'))
+    for grasp, in grasp_gen(target_point):
+        saved_world.restore()
+        q_grasp = inverse_kinematics(robot, grasp.link,
+            end_effector_from_body(target_pose.pose, grasp.grasp_pose))
+        conf = BodyConf(robot, q_grasp)
+        link_pose = get_link_pose(robot, link_from_name(robot, 'panda_hand'))
 
-            in_motion_result = free_motion_fn(init_pos, conf) # move from initial position to grasp position
-            if in_motion_result is None:
-                continue
-            in_motion_cmd, = in_motion_result
-            in_motion_cmd = in_motion_cmd.refine(num_steps=50)
-            return in_motion_cmd
+        in_motion_result = free_motion_fn(init_pos, conf) # move from initial position to grasp position
+        if in_motion_result is None:
+            continue
+        in_motion_cmd, = in_motion_result
+        in_motion_cmd = in_motion_cmd.refine(num_steps=50)
+        return in_motion_cmd
 
     return None
 
@@ -177,9 +174,6 @@ def main(args, display='execute'): # control | execute | step
         disable_real_time()
         add_data_path()
         draw_global_system()
-    # Read the lines pickle file.
-    with open(os.path.join(args.path, '../Interact/lines.pickle'), 'rb') as f:
-        lines = pickle.load(f)
     with LockRenderer():
         with HideOutput():
             # robot = load_model(FRANKA_URDF) # KUKA_IIWA_URDF | DRAKE_IIWA_URDF
@@ -190,11 +184,12 @@ def main(args, display='execute'): # control | execute | step
             floor = p.loadURDF("plane.urdf")
             # floor = load_model('plane.urdf')
             # read all urdfs of bbjects
-            all_urdfs = sorted(glob(os.path.join(args.path, "mesh*.urdf")))
-            scene_mesh = []
-            for urdf_path in all_urdfs:
-                mesh = p.loadURDF(urdf_path)
-                scene_mesh.append(mesh)
+            if args.urdf_path:
+                all_urdfs = sorted(glob(os.path.join(args.urdf_path, "mesh*.urdf")))
+                scene_mesh = []
+                for urdf_path in all_urdfs:
+                    mesh = p.loadURDF(urdf_path)
+                    scene_mesh.append(mesh)
         # Set the floor position
         set_pose(floor, Pose(Point(x=1.2, z=0.0)))
     joints = get_movable_joints(robot)
@@ -215,65 +210,55 @@ def main(args, display='execute'): # control | execute | step
     # set_pose(link, link_pose)
 
 
-    # Use a for loop to nudge all objects in lines
-    for key in lines.keys():
-        init_targets, move_targets = generate_move_targets(lines[key], args)
-        # first the trajectory to move the robot near the contact points
-        motion = plan_nft(robot,
-                     target_points=init_targets,
-                     target_mesh=None,
-                     scene_mesh=[],
-                     floor=floor,
-                     teleport=False,
-                     smoothing=False,
-                     algorithm=None)
-                     # algorithm='direct')
+    # Generate target
+    movetarget = create_box(w = 0.01, l=0.01, h=0.01, color=RGBA(0, 1, 0, 1))
+    direction = (0.0, 0.0, 0.0, 1.0)
+    set_pose(movetarget, ([args.x, args.y, args.z], direction))
+    # first the trajectory to move the robot near the contact points
+    motion = plan_nft(robot,
+                    target_point=movetarget,
+                    target_mesh=None,
+                    scene_mesh=[],
+                    floor=floor,
+                    teleport=False,
+                    smoothing=False,
+                    algorithm=None)
+                    # algorithm='direct')
 
+    # let's save the joint trajectory for robot actuation
+    motion_path = [pos for path in motion.body_paths for pos in path.path]
+    motion_path = np.array(motion_path)
+    savedir = os.path.join(args.path, "trajectory")
+    os.makedirs(savedir, exist_ok=True)
+    np.savetxt(os.path.join(savedir, "pickmotion.txt"), motion_path)
 
-        # next the trajectory to move the robot and do contact
-        motion2 = plan_nft(robot,
-                     target_points=move_targets,
-                     target_mesh=None,
-                     scene_mesh=[],
-                     floor=floor,
-                     teleport=False,
-                     smoothing=False,
-                     algorithm=None)
+    # send to panda via scp
+    if args.send_to_panda:
+        cmd = "scp -P 7910 {} {}".format(os.path.join(savedir, "pickmotion.txt"), "panda@147.46.132.81:/home/panda/libfranka/examples/trajectories/interact")
+        os.system(cmd)
+    
+    command = Command(motion.body_paths)
+    if display == 'control':
+        enable_gravity()
+        command.control(real_time=False, dt=0)
+    elif display == 'execute':
+        command.execute(time_step=0.002)
+        breakpoint()
+    elif display == 'step':
+        command.step()
+    else:
+        command.step()
+        # raise ValueError(display)
 
-        # let's save the joint trajectory for robot actuation
-        motion_path = [pos for path in motion.body_paths for pos in path.path]
-        motion_path = np.array(motion_path)
-        motion2_path = [pos for path in motion2.body_paths for pos in path.path]
-        motion2_path = np.array(motion2_path)
-        savedir = os.path.join(args.path, "trajectory")
-        os.makedirs(savedir, exist_ok=True)
-        np.savetxt(os.path.join(savedir, "motion.txt"), motion_path)
-        np.savetxt(os.path.join(savedir, "motion2.txt"), motion2_path)
-
-        # send to panda via scp
-        if args.send_to_panda:
-            cmd = "scp -P 7910 {} {}".format(os.path.join(savedir, "motion.txt"), "panda@147.46.132.81:/home/panda/libfranka/examples/trajectories/interact")
-            os.system(cmd)
-            cmd = "scp -P 7910 {} {}".format(os.path.join(savedir, "motion2.txt"), "panda@147.46.132.81:/home/panda/libfranka/examples/trajectories/interact")
-            os.system(cmd)
-        
-        command = Command(motion.body_paths + motion2.body_paths)
-        if display == 'control':
-            enable_gravity()
-            command.control(real_time=False, dt=0)
-        elif display == 'execute':
-            command.execute(time_step=0.002)
-        elif display == 'step':
-            command.step()
-        else:
-            raise ValueError(display)
-
-    disconnect()
+    # disconnect()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("path", help="directory to urdfs")
+    parser.add_argument("path")
+    parser.add_argument("--urdf_path")
     parser.add_argument("--send_to_panda", action='store_true')
-    parser.add_argument("--z", default=0.03, type=float, help='the default height of the gripper')
+    parser.add_argument("--x", default=0.5, type=float, help='the target x of the gripper')
+    parser.add_argument("--y", default=0.0, type=float, help='the target y of the gripper')
+    parser.add_argument("--z", default=0.03, type=float, help='the target x of the gripper')
     args = parser.parse_args()
     main(args, 'execute')
