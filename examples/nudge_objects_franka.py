@@ -222,7 +222,7 @@ def main(args, display='execute'): # control | execute | step
         motion = plan_nft(robot,
                      target_points=init_targets,
                      target_mesh=None,
-                     scene_mesh=[],
+                     scene_mesh=scene_mesh,
                      floor=floor,
                      teleport=False,
                      smoothing=False,
@@ -263,6 +263,7 @@ def main(args, display='execute'): # control | execute | step
             command.control(real_time=False, dt=0)
         elif display == 'execute':
             command.execute(time_step=0.002)
+            breakpoint()
         elif display == 'step':
             command.step()
         else:
@@ -274,6 +275,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("path", help="directory to urdfs")
     parser.add_argument("--send_to_panda", action='store_true')
-    parser.add_argument("--z", default=0.03, type=float, help='the default height of the gripper')
+    parser.add_argument("--z", default=0.01, type=float, help='the default height of the gripper')
     args = parser.parse_args()
     main(args, 'execute')
