@@ -23,6 +23,7 @@ from glob import glob
 import pickle
 
 from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
 
 def plan(robot, block, fixed, teleport):
     grasp_gen = get_grasp_gen(robot, 'top')
@@ -62,6 +63,8 @@ def plan_single_target(robot,
                        teleport,
                        smoothing=False,
                        algorithm=None):
+    """Function to plan the path for a single target point (pose). 
+    Meshes in variable scene_mesh will be avoided."""
 
     grasp_gen = get_grasp_gen(robot, 'top')
     grasping_fn = get_grasping_fn(robot, fixed=scene_mesh + [floor], teleport=teleport, num_attempts=10)
@@ -73,6 +76,7 @@ def plan_single_target(robot,
     init_pos = BodyConf(robot)
     saved_world = WorldSaver()
 
+    found_good_path = False
     for grasp, in grasp_gen(target_point):
         saved_world.restore()
         q_grasp = inverse_kinematics(robot, grasp.link,
@@ -146,35 +150,68 @@ def vector_to_euler(direction):
     return np.array([yaw, pitch, roll]).tolist()
 
 
-def generate_move_targets(line, args):
-    """line: a list of length 20 (two end points per element)"""
-    init_targets = []
-    move_targets = []
+def generate_move_targets(pt1, pt2, args):
+    """Function to generate the init and move targets given 2 points in space.
+    line: a list of length 20 (two end points per element)"""
 
-    for endpoints in line:
-        init_target = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(0, 1, 0, 1))
-        init_target_ = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(0, 1, 0, 1))
-        move_target = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(1, 0, 0, 1))
-        move_target_ = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(1, 0, 0, 1))
-        # Need to add both endpoints in grasp target
-        # init target - starting point, move_target - center of the two endpoints (end motion here)
-        pt1 = endpoints[0]
-        pt2 = endpoints[1]
-        center = (pt1 + pt2) / 2
-        direction = (0.0, 0.0, 0.0, 1.0)
-        
-        set_pose(init_target, ([pt1[0], pt1[1], args.z], direction))
-        set_pose(init_target_, ([pt2[0], pt2[1], args.z], direction))
-        set_pose(move_target, ([center[0], center[1], args.z], direction))
-        set_pose(move_target_, ([center[0], center[1], args.z], direction))
+    # first point
+    init_target = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(0, 1, 0, 1))
+    # second point
+    init_target_ = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(0, 1, 0, 1))
+    # the center point
+    move_target = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(1, 0, 0, 1))
+    # Need to add both endpoints in grasp target
+    # init target - starting point, move_target - center of the two endpoints (end motion here)
+    center = (pt1 + pt2) / 2
+    direction = (0.0, 0.0, 0.0, 1.0)
+    
+    set_pose(init_target, ([pt1[0], pt1[1], args.z], direction))
+    set_pose(init_target_, ([pt2[0], pt2[1], args.z], direction))
+    set_pose(move_target, ([center[0], center[1], args.z], direction))
+
+    # Return all three to find the path between:
+    # init_target -> move_target
+    # init_target_ -> move_target
+    return init_target, init_target_, move_target
 
 
-        init_targets.append(init_target)
-        init_targets.append(init_target_)
-        move_targets.append(move_target)
-        move_targets.append(move_target_)
- 
-    return init_targets, move_targets
+def get_y(x, slope, x1, y1):
+    """Function to return the value of y = slope(x - x1) + y1"""
+    return slope * (x - x1) + y1
+
+
+def augment_points(pt1, pt2, args):
+    '''Function to extrapolate the two points.
+    Function required since pt1, pt2 are often too close to the object.'''
+    slope = (pt2[1] - pt1[1]) / (pt2[0] - pt1[0])
+    aug_length = args.augment_max_length / args.num_augments
+
+    # check the x axis of two points
+    if pt1[0] < pt2[0]:
+        x1_aug = np.arange(pt1[0] - args.augment_max_length, pt1[0], aug_length)
+        y1_aug = get_y(x1_aug, slope, pt1[0], pt1[1])
+        pt1_aug = np.stack((x1_aug, y1_aug), axis=-1)
+        x2_aug = np.arange(pt2[0], args.augment_max_length + pt2[0], aug_length)
+        y2_aug = get_y(x2_aug, slope, pt1[0], pt1[1])
+        pt2_aug = np.stack((x2_aug, y2_aug), axis=-1)
+    else:
+        x2_aug = np.arange(pt2[0] - args.augment_max_length, pt2[0], aug_length)
+        y2_aug = get_y(x2_aug, slope, pt1[0], pt1[1])
+        pt2_aug = np.stack((x2_aug, y2_aug), axis=-1)
+        x1_aug = np.arange(pt1[0], args.augment_max_length + pt1[0], aug_length)
+        y1_aug = get_y(x1_aug, slope, pt1[0], pt1[1])
+        pt1_aug = np.stack((x1_aug, y1_aug), axis=-1)
+
+    # # for debug, let's visualize
+    # # original point
+    # for i in range(len(pt1_aug)):
+    #     plt.scatter(pt1_aug[i, 0], pt1_aug[i, 1], c='tab:blue')
+    #     plt.scatter(pt2_aug[i, 0], pt2_aug[i, 1], c='tab:blue')
+    # plt.scatter(pt1[0], pt1[1], c='tab:red')
+    # plt.scatter(pt2[0], pt2[1], c='tab:red')
+    # plt.show()
+    # breakpoint()
+    return pt1_aug, pt2_aug
 
 def main(args, display='execute'): # control | execute | step
     with HideOutput():
@@ -222,28 +259,65 @@ def main(args, display='execute'): # control | execute | step
 
     # Use a for loop to nudge all objects in lines
     for key in lines.keys():
-        init_targets, move_targets = generate_move_targets(lines[key], args)
-        # first the trajectory to move the robot near the contact points
-        motion = plan_single_target(robot,
-                     target_points=init_targets,
-                     target_mesh=None,
-                     scene_mesh=scene_mesh,
-                     floor=floor,
-                     teleport=False,
-                     smoothing=False,
-                     algorithm=None)
-                     # algorithm='direct')
 
+        found_path = False
+        # Let's use a for loop to find a good path
+        for pt_idx in range(len(lines[key])):
+            pt1 = lines[key][pt_idx][0]
+            pt2 = lines[key][pt_idx][1]
 
-        # next the trajectory to move the robot and do contact
-        motion2 = plan_single_target(robot,
-                     target_points=move_targets,
-                     target_mesh=None,
-                     scene_mesh=[],
-                     floor=floor,
-                     teleport=False,
-                     smoothing=False,
-                     algorithm=None)
+            # We will augment on the points - extrapolate the two points
+            pt1_aug, pt2_aug = augment_points(pt1, pt2, args)
+            for aug_idx in range(args.num_augments):
+                init_target, init_target_, move_targets = generate_move_targets(
+                                                            pt1_aug[aug_idx],
+                                                            pt2_aug[aug_idx],
+                                                            args)
+                
+                # first the trajectory to move the robot near the contact points
+                motion = plan_single_target(robot,
+                            target_point=init_target,
+                            target_mesh=None,
+                            scene_mesh=scene_mesh,
+                            floor=floor,
+                            teleport=False,
+                            smoothing=False,
+                            algorithm=None)
+                            # algorithm='direct')
+                # in case we could not successfully plan to init_target
+                if motion is None:
+                    motion = plan_single_target(robot,
+                            target_point=init_target_,
+                            target_mesh=None,
+                            scene_mesh=scene_mesh,
+                            floor=floor,
+                            teleport=False,
+                            smoothing=False,
+                            algorithm=None)
+
+                # check if we found a motion
+                if motion is not None:
+                    # next the trajectory to move the robot and do contact
+                    motion2 = plan_single_target(robot,
+                                 target_point=move_targets,
+                                 target_mesh=None,
+                                 scene_mesh=[],
+                                 floor=floor,
+                                 teleport=False,
+                                 smoothing=False,
+                                 algorithm=None)
+                    
+                    # if we found both motion and motion2
+                    if motion2 is not None:
+                        found_path = True
+                        break
+            if found_path:
+                break
+        
+        # if we could not find a good path after iterating through all points
+        if not found_path:
+            print("================= We could not find any good path! ====================")
+            os._exit(0)
 
         # let's save the joint trajectory for robot actuation
         motion_path = [pos for path in motion.body_paths for pos in path.path]
@@ -269,6 +343,7 @@ def main(args, display='execute'): # control | execute | step
         elif display == 'execute':
             command.execute(time_step=0.002)
             breakpoint()
+
         elif display == 'step':
             command.step()
         else:
@@ -280,6 +355,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("path", help="directory to urdfs")
     parser.add_argument("--send_to_panda", action='store_true')
-    parser.add_argument("--z", default=0.01, type=float, help='the default height of the gripper')
+    parser.add_argument("--z", default=0.02, type=float, help='the height of the gripper')
+    parser.add_argument("--num_augments", default=5, type=int, help='the number of points to augment for a single line.')
+    parser.add_argument("--augment_max_length", default=0.1, type=float, help='the maximum length of augment along a line in meter scale.')
     args = parser.parse_args()
     main(args, 'execute')
