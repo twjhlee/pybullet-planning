@@ -155,3 +155,11 @@ See the following examples: https://github.com/caelan/pddlstream/tree/master/exa
 ## Bullet Resources
 
 * GitHub - https://github.com/bulletphysics/bullet3
+
+
+# Junho Lee
+## Nudging for interactive scene
+    python examples/nudge_objects_franka.py <path-to-clusters> --send_to_panda
+
+## Troubleshooting
+    export PYTHONPATH=$PYTHONPATH:$(pwd)

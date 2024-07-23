@@ -54,33 +54,38 @@ def plan(robot, block, fixed, teleport):
                           path3.body_paths)
     return None
 
-def plan_nft(robot, target_points, target_mesh, scene_mesh, floor, teleport, smoothing=False, algorithm=None):
+def plan_single_target(robot,
+                       target_point,
+                       target_mesh,
+                       scene_mesh,
+                       floor,
+                       teleport,
+                       smoothing=False,
+                       algorithm=None):
+
     grasp_gen = get_grasp_gen(robot, 'top')
     grasping_fn = get_grasping_fn(robot, fixed=scene_mesh + [floor], teleport=teleport, num_attempts=10)
     free_motion_fn = get_free_motion_gen(robot, fixed=scene_mesh + [floor], teleport=teleport, smoothing=smoothing, algorithm=algorithm)
     holding_motion_fn = get_holding_motion_gen(robot, fixed=scene_mesh + [floor], teleport=teleport, algorithm=algorithm)
 
-    target_poses = []
-    for target in target_points:
-        target_poses.append(BodyPose(target))
+    target_pose = BodyPose(target_point)
 
     init_pos = BodyConf(robot)
     saved_world = WorldSaver()
 
-    for target_pose, target_point in zip(target_poses, target_points):
-        for grasp, in grasp_gen(target_point):
-            saved_world.restore()
-            q_grasp = inverse_kinematics(robot, grasp.link,
-                end_effector_from_body(target_pose.pose, grasp.grasp_pose))
-            conf = BodyConf(robot, q_grasp)
-            link_pose = get_link_pose(robot, link_from_name(robot, 'panda_hand'))
+    for grasp, in grasp_gen(target_point):
+        saved_world.restore()
+        q_grasp = inverse_kinematics(robot, grasp.link,
+            end_effector_from_body(target_pose.pose, grasp.grasp_pose))
+        conf = BodyConf(robot, q_grasp)
+        link_pose = get_link_pose(robot, link_from_name(robot, 'panda_hand'))
 
-            in_motion_result = free_motion_fn(init_pos, conf) # move from initial position to grasp position
-            if in_motion_result is None:
-                continue
-            in_motion_cmd, = in_motion_result
-            in_motion_cmd = in_motion_cmd.refine(num_steps=50)
-            return in_motion_cmd
+        in_motion_result = free_motion_fn(init_pos, conf) # move from initial position to grasp position
+        if in_motion_result is None:
+            continue
+        in_motion_cmd, = in_motion_result
+        in_motion_cmd = in_motion_cmd.refine(num_steps=50)
+        return in_motion_cmd
 
     return None
 
@@ -219,7 +224,7 @@ def main(args, display='execute'): # control | execute | step
     for key in lines.keys():
         init_targets, move_targets = generate_move_targets(lines[key], args)
         # first the trajectory to move the robot near the contact points
-        motion = plan_nft(robot,
+        motion = plan_single_target(robot,
                      target_points=init_targets,
                      target_mesh=None,
                      scene_mesh=scene_mesh,
@@ -231,7 +236,7 @@ def main(args, display='execute'): # control | execute | step
 
 
         # next the trajectory to move the robot and do contact
-        motion2 = plan_nft(robot,
+        motion2 = plan_single_target(robot,
                      target_points=move_targets,
                      target_mesh=None,
                      scene_mesh=[],
