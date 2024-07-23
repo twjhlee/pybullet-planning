@@ -159,7 +159,7 @@ def generate_move_targets(pt1, pt2, args):
     # second point
     init_target_ = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(0, 1, 0, 1))
     # the center point
-    move_target = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(1, 0, 0, 1))
+    # move_target = create_box(w=0.01, l=0.01, h=0.01, color=RGBA(1, 0, 0, 1))
     # Need to add both endpoints in grasp target
     # init target - starting point, move_target - center of the two endpoints (end motion here)
     center = (pt1 + pt2) / 2
@@ -167,12 +167,12 @@ def generate_move_targets(pt1, pt2, args):
     
     set_pose(init_target, ([pt1[0], pt1[1], args.z], direction))
     set_pose(init_target_, ([pt2[0], pt2[1], args.z], direction))
-    set_pose(move_target, ([center[0], center[1], args.z], direction))
+    # set_pose(move_target, ([center[0], center[1], args.z], direction))
 
     # Return all three to find the path between:
     # init_target -> move_target
     # init_target_ -> move_target
-    return init_target, init_target_, move_target
+    return init_target, init_target_
 
 
 def get_y(x, slope, x1, y1):
@@ -265,16 +265,17 @@ def main(args, display='execute'): # control | execute | step
         for pt_idx in range(len(lines[key])):
             pt1 = lines[key][pt_idx][0]
             pt2 = lines[key][pt_idx][1]
+            orig_pt1_target, orig_pt2_target = generate_move_targets(pt1, pt2, args)
 
             # We will augment on the points - extrapolate the two points
             pt1_aug, pt2_aug = augment_points(pt1, pt2, args)
             for aug_idx in range(args.num_augments):
-                init_target, init_target_, move_targets = generate_move_targets(
-                                                            pt1_aug[aug_idx],
-                                                            pt2_aug[aug_idx],
-                                                            args)
+                init_target, init_target_= generate_move_targets(
+                                            pt1_aug[aug_idx],
+                                            pt2_aug[aug_idx],
+                                            args)
                 
-                # first the trajectory to move the robot near the contact points
+                # first the trajectory with collision detection to init_target
                 motion = plan_single_target(robot,
                             target_point=init_target,
                             target_mesh=None,
@@ -284,9 +285,23 @@ def main(args, display='execute'): # control | execute | step
                             smoothing=False,
                             algorithm=None)
                             # algorithm='direct')
-                # in case we could not successfully plan to init_target
-                if motion is None:
-                    motion = plan_single_target(robot,
+                # move to other side of point
+                if motion is not None:
+                    motion2 = plan_single_target(robot,
+                            target_point=orig_pt2_target,
+                            target_mesh=None,
+                            scene_mesh=[],
+                            floor=floor,
+                            teleport=False,
+                            smoothing=False,
+                            algorithm=None)
+                    if motion2:
+                        found_path = True
+                        break
+                
+                # if we failed till here, find the other way
+                # first the trajectory with collision detection to init_target_
+                motion = plan_single_target(robot,
                             target_point=init_target_,
                             target_mesh=None,
                             scene_mesh=scene_mesh,
@@ -294,21 +309,18 @@ def main(args, display='execute'): # control | execute | step
                             teleport=False,
                             smoothing=False,
                             algorithm=None)
-
-                # check if we found a motion
+                            # algorithm='direct')
+                # move to other side of point
                 if motion is not None:
-                    # next the trajectory to move the robot and do contact
                     motion2 = plan_single_target(robot,
-                                 target_point=move_targets,
-                                 target_mesh=None,
-                                 scene_mesh=[],
-                                 floor=floor,
-                                 teleport=False,
-                                 smoothing=False,
-                                 algorithm=None)
-                    
-                    # if we found both motion and motion2
-                    if motion2 is not None:
+                            target_point=orig_pt1_target,
+                            target_mesh=None,
+                            scene_mesh=[],
+                            floor=floor,
+                            teleport=False,
+                            smoothing=False,
+                            algorithm=None)
+                    if motion2:
                         found_path = True
                         break
             if found_path:
